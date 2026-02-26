@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-demo
+  template:
+    metadata:
+      labels:
+        app: flask-demo
+    spec:
+      containers:
+      - name: flask-demo
+        image: <your-dockerhub-username>/my-image:latest
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-demo-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: flask-demo
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
