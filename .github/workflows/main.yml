@@ -1,58 +1,98 @@
 name: CI/CD Pipeline
+
 on:
   push:
-    branches: [main]
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
 jobs:
   build:
+    name: Build & Push Docker image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build, tag, and push image to DockerHub
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          IMAGE_NAME: my-image
+
+      - name: Set image tag
+        id: meta
         run: |
-          docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME .
-          docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
+          # latest for main, short SHA for everything else
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "TAG=latest" >> $GITHUB_OUTPUT
+          else
+            echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/my-image"
+          TAG="${{ steps.meta.outputs.TAG }}"
+          docker build -t "$IMAGE:$TAG" .
+          docker push "$IMAGE:$TAG"
 
   test:
+    name: Run tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Test with pytest
-        run: |
           pip install pytest
-          pytest test.py
+
+      - name: Run pytest
+        run: pytest -q
 
   deploy:
+    name: Deploy to AKS
     runs-on: ubuntu-latest
     needs: [build, test]
+    # Only deploy on push to main (not on PR runs)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write    # for federated/OIDC if you switch later
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Login to Azure
+        uses: actions/checkout@v4
+
+      # If you created a service principal with JSON credentials (AZURE_CREDENTIALS),
+      # keep using azure/login@v1. Otherwise prefer v2 with client/tenant/sub.
+      - name: Azure login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Set AKS context
-        uses: azure/aks-set-context@v1
+        uses: azure/aks-set-context@v3
         with:
-          resource-group: myResourceGroup
-          cluster-name: myAKSCluster
+          resource-group: AKS_CICD_Resource_group   # <-- update if different
+          cluster-name: <YOUR_AKS_CLUSTER_NAME>     # <-- set your cluster
+
       - name: Deploy to AKS
-        run: kubectl apply -f deployment.yaml
+        run: |
+          # If you tagged image as latest, your deployment should reference :latest,
+          # otherwise update image tag to $GITHUB_SHA::7 and patch the deployment.
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
