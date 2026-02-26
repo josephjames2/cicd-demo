@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: flask-demo
-        image: <your-dockerhub-username>/my-image:latest
+        image: joseph19685/my-image:latest
         ports:
         - containerPort: 8080
 ---
