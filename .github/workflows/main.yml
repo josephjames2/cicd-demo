@@ -70,29 +70,27 @@ jobs:
     # Only deploy on push to main (not on PR runs)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
-      id-token: write    # for federated/OIDC if you switch later
+      id-token: write    # for federated/OIDC if switch later
       contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      # If you created a service principal with JSON credentials (AZURE_CREDENTIALS),
-      # keep using azure/login@v1. Otherwise prefer v2 with client/tenant/sub.
+        
       - name: Azure login
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+           client-id: ${{ secrets.AZURE_CLIENT_ID }}
+           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Set AKS context
         uses: azure/aks-set-context@v3
         with:
           resource-group: AKS_CICD_Resource_group   # <-- update if different
-          cluster-name: <YOUR_AKS_CLUSTER_NAME>     # <-- set your cluster
+          cluster-name: AKS_CICD     # <-- set your cluster
 
       - name: Deploy to AKS
         run: |
-          # If you tagged image as latest, your deployment should reference :latest,
-          # otherwise update image tag to $GITHUB_SHA::7 and patch the deployment.
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
 
